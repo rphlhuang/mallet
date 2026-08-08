@@ -1,0 +1,9 @@
+[submodule "third_party/chisel-axi-utils"]
+	path = third_party/chisel-axi-utils
+	url = https://github.com/hwspec/chisel-axi-utils.git
+[submodule "third_party/berkeley-hardfloat"]
+	path = third_party/berkeley-hardfloat
+	url = https://github.com/ucb-bar/berkeley-hardfloat.git
+[submodule "third_party/rial"]
+	path = third_party/rial
+	url = https://github.com/hwspec/rial-tmpfix

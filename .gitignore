@@ -1,0 +1,30 @@
+# compiled output
+target/
+project/target/
+
+# build
+.bsp/
+build/
+
+# generated SystemVerilog from ChiselStage.emitSystemVerilogFile
+generated/
+
+# cocotb outputs
+tests/*/*/sim_build/
+tests/*/*/__pycache__/
+tests/*/*/results.xml
+tests/*/*/*.vcd
+tests/*/*/*.fst
+tests/*/*/*.log
+
+# python
+venv/
+__pycache__/
+
+# macos
+.DS_STORE
+
+# claude
+.claude/
+# local agent context
+context/
