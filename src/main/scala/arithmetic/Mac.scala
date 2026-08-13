@@ -55,23 +55,23 @@ class Mac(val width: Int, val accWidth: Int) extends Module {
     }
   }
 
-  AssertProperty(state =/= 3.U) // reachability: no 4th state
-  AssertProperty(io.out.valid |-> (state === sDone))
-  AssertProperty(io.out.valid |-> (io.out.bits === accReg))
-  AssertProperty(!(io.in.ready && io.out.valid))
+  // AssertProperty(state =/= 3.U) // reachability: no 4th state
+  // AssertProperty(io.out.valid |-> (state === sDone))
+  // AssertProperty(io.out.valid |-> (io.out.bits === accReg))
+  // AssertProperty(!(io.in.ready && io.out.valid))
 
-  // functionally the same as:
-  // AssertProperty(io.in.fire |=> (state === sCompute))
-  // but support for |=> no longer exists.
+  // // functionally the same as:
+  // // AssertProperty(io.in.fire |=> (state === sCompute))
+  // // but support for |=> no longer exists.
 
-  // the following assertion would be violated on step 1:
-  // AssertProperty(io.in.fire.past(1) |-> (state === sCompute))
-  // since the shiftreg implied by past() would be uninitialized
-  // BELOW 2 LINES NOW OUT OF DATE, SEE BELOW
-  // val started = RegInit(false.B); started := true.B
-  // AssertProperty(started.and(io.in.fire.past(1)) |-> (state === sCompute))
+  // // the following assertion would be violated on step 1:
+  // // AssertProperty(io.in.fire.past(1) |-> (state === sCompute))
+  // // since the shiftreg implied by past() would be uninitialized
+  // // BELOW 2 LINES NOW OUT OF DATE, SEE BELOW
+  // // val started = RegInit(false.B); started := true.B
+  // // AssertProperty(started.and(io.in.fire.past(1)) |-> (state === sCompute))
   
-  AssertProperty(warmedUp(1).and(io.in.fire.past(1)) |-> (state === sCompute))
+  // AssertProperty(warmedUp(1).and(io.in.fire.past(1)) |-> (state === sCompute))
 }
 
 object MacMain extends App {

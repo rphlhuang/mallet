@@ -14,7 +14,7 @@ Inspired by [FLAG: Formal and LLM-assisted SVA Generation for Formal Specificati
 | Target | Description |
 | ------ | ----------- |
 | `make mallet` | per-property formal report, `KMAX=` sets the BMC bound (default 20) for mallet |
-| `make chiselsim` | run the Chisel scalatest suite (sbt test) |
+| `make chiselsim` | run the Chisel scalatest suite (sbt test), `FORCE=1` forces all tests to run |
 | `make cocotb` | run every cocotb testbench under tests/ |
 | `make gen` | re-elaborate every Chisel App to SystemVerilog |
 | `make clean` | clean generated SV, mallet results, cocotb sim outputs, sbt target |
