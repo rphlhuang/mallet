@@ -9,6 +9,38 @@ Inspired by [FLAG: Formal and LLM-assisted SVA Generation for Formal Specificati
 2) Chisel assertions: what gets written to the Chisel file, alongside the your Chisel code. By tying Chisel assertions to the other two representations, we prevent the LLM from generating invalid syntax and assertion types that are supported by chisel3.ltl but unsupported by CIRCT.
 3) Abstract syntax tree (AST): for pre-SMT solving simplifications. By representing the property using `mallet`'s custom algebraic data types, we can SAT solve to remove trivial, vacuous, and contradictory properties from the set pre-btor2-lowering.
 
+## Dependencies
+
+Mallet currently runs on Chisel 7.13.0 and scalatest 3.2.19.
+
+#### JDK 8 or newer
+
+We recommend LTS releases Java 8 and Java 11. You can install the JDK as your operating system recommends, or use the prebuilt binaries from [AdoptOpenJDK](https://adoptopenjdk.net/).
+
+#### SBT
+
+SBT is the most common build tool in the Scala community. You can download it [here](https://www.scala-sbt.org/download.html)
+
+#### OSS-CAD-Suite: Verilator, Icarus, btormc, rIC3, pono
+
+Mallet and cocotb require Verilator to be installed. Icarus can optionally be used as an alternative sim for cocotb tests.
+`btormc`, `rIC3` and `pono` are the currently supported model-checking engines.
+All these can be installed via the oss-cad-suite, which has a nightly build release [here](https://github.com/YosysHQ/oss-cad-suite-build/releases), but Mallet was built and tested with the 20260708 release.
+
+### Python libraries
+
+> Note: cocotb 2.0.1 only supports a maximum Python version of 3.13.
+
+Install all python libraries from `requirements.txt` using:
+```bash
+python3.13 -m venv venv
+source venv/bin/activate
+pip3.13 install -r requirements.txt
+``` 
+
+This will also install the `chisel-axi-bridge` python module as a package from `third_party/chisel-axi-utils`.
+
+
 ## Usage
 
 | Target | Description |

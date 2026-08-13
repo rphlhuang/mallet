@@ -9,4 +9,5 @@ pytest==9.1.1
 cocotb-test==0.2.6
 cocotb-bus==0.3.0
 scapy==2.7.0
-cocotbext-axi @ git+https://github.com/RasmusGOlsen/cocotbext-axi@5c3d7835771b8319d7516f4fad654f5f7d9db78af
+cocotbext-axi @ git+https://github.com/RasmusGOlsen/cocotbext-axi@5c3d7835771b8319d7516f4fad654f5f7d9db78a
+-e ./third_party/chisel-axi-utils/python
