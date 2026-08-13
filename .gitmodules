@@ -7,3 +7,6 @@
 [submodule "third_party/rial"]
 	path = third_party/rial
 	url = https://github.com/hwspec/rial-tmpfix
+[submodule "third_party/openfloat"]
+	path = third_party/openfloat
+	url = https://github.com/VegaMario/OpenFloat.git

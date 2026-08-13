@@ -9,6 +9,9 @@ import upickle.default._
 
 import chisel3._
 import chisel3.util._
+import _root_.circt.stage.ChiselStage
+
+import mallet.{MalletSpec, MalletRegistry, Operand, Status, Result, Commit, RW, B}
 
 case class FletcherModuleParams( // Note: do not put default value here
                             // params suffixed with _r, _w, or _rw represent addresses
@@ -221,4 +224,44 @@ object Axi4LiteFletcherMain extends App {
     "FLETCHER_MODULE_PARAMS")
 
   EmitVerilog.generate(new Axi4LiteFletcher(p, debugprint=true), p)
+}
+
+class FletcherSpec(p: FletcherModuleParams) extends Axi4LiteFletcher(p) with MalletSpec {
+
+  // ── memory-map roles ─────────────────────────────────────────────
+  p.data_w        is Operand at dataReg
+  p.push_w        is Commit  at pushPendingReg requiring (dataReg) acceptedOn dut.io.in.ready
+  p.status_r      is Status  at dutValidReg
+  p.result_r      is Result  at dutDataReg validWhen dutValidReg
+  p.soft_reset_rw is RW
+
+  // ── protocol contract ────────────────────────────────────────────
+  S.AXI conformsTo AxiLite32Slave
+
+  // ── raw escape hatch ─────────────────────────────────────────────
+  private val srPulse = B(softResetPulseReg, "softResetPulseReg")
+  property("soft_reset_is_pulse") { srPulse |=> !srPulse }
+  property("result_not_dropped")  { dut.io.out.fire |=> dutValidReg }
+
+  done()
+}
+
+object FletcherSpecChirrtlMain extends App {
+  val p = FletcherModuleParams.default()
+
+  MalletRegistry.clear()
+  MalletRegistry.coversEnabled = false
+  ChiselStage.emitCHIRRTLFile(
+    new FletcherSpec(p),
+    args = Array("--target-dir", "generated/mallet/chirrtl")
+  )
+  MalletRegistry.writeSidecar("generated/mallet/props")
+
+  MalletRegistry.clear()
+  MalletRegistry.coversEnabled = true
+  ChiselStage.emitCHIRRTLFile(
+    new FletcherSpec(p),
+    args = Array("--target-dir", "generated/mallet/reach")
+  )
+  MalletRegistry.coversEnabled = false
 }

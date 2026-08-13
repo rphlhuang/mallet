@@ -64,7 +64,7 @@ clean:
 	@for dir in $(COCOTB_DIRS); do \
 		$(MAKE) -C $$dir clean || true; \
 	done
-	rm -rf generated
+	@[ -d generated ] && find generated -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + || true
 	sbt clean
 
 extraclean: clean

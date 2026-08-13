@@ -16,6 +16,7 @@ lazy val root = (project in file("."))
     Compile / unmanagedSourceDirectories ++= Seq(
       baseDirectory.value / "third_party" / "chisel-axi-utils" / "src" / "main" / "scala",
       baseDirectory.value / "third_party" / "berkeley-hardfloat" / "hardfloat" / "src" / "main" / "scala",
+      // baseDirectory.value / "third_party" / "openfloat" / "src" / "main" / "scala",
     ),
     Compile / unmanagedSources ++= Seq(
       baseDirectory.value / "third_party" / "rial" / "src" / "main" / "scala" / "ecc" / "package.scala",

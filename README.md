@@ -9,6 +9,16 @@ Inspired by [FLAG: Formal and LLM-assisted SVA Generation for Formal Specificati
 2) Chisel assertions: what gets written to the Chisel file, alongside the your Chisel code. By tying Chisel assertions to the other two representations, we prevent the LLM from generating invalid syntax and assertion types that are supported by chisel3.ltl but unsupported by CIRCT.
 3) Abstract syntax tree (AST): for pre-SMT solving simplifications. By representing the property using `mallet`'s custom algebraic data types, we can SAT solve to remove trivial, vacuous, and contradictory properties from the set pre-btor2-lowering.
 
+## Usage
+
+| Target | Description |
+| ------ | ----------- |
+| `make mallet` | per-property formal report, `KMAX=` sets the BMC bound (default 20) for mallet |
+| `make chiselsim` | run the Chisel scalatest suite (sbt test) |
+| `make cocotb` | run every cocotb testbench under tests/ |
+| `make gen` | re-elaborate every Chisel App to SystemVerilog |
+| `make clean` | clean generated SV, mallet results, cocotb sim outputs, sbt target |
+
 ## Docs
 
 ### Basics: `mallet`'s Algebraic Data Types (ADTs)
@@ -23,11 +33,9 @@ Inspired by [FLAG: Formal and LLM-assisted SVA Generation for Formal Specificati
 
 `Term` and `Expr` are explicitly different for type safety; `Not(Sig(awaddr))` on a 32-bit AXI-Lite bus wouldn't make sense and causes compile errors.
 
-### Basics: Protocol Contracts
+### Basics: Protocol Contracts/Annotations
 
-To facilitate formal verification for a multiplicity of common communication protocols, `mallet` ships protocol contracts (see `src/main/scala/mallet/contract`) to automatically verify Chisel modules that inherit from certain constrained interfaces. Currently supported protocols are:
-
-- AMBA AXI-Lite, 32-bit <-- axi.HasAxiLite32IO from `chisel-axi-utils`
+To facilitate formal verification for a multiplicity of common communication protocols, `mallet` ships protocol contracts (see `src/main/scala/mallet/contract`) to automatically verify Chisel modules that inherit from certain constrained interfaces. Currently the only interface supported is 32-bit AMBA AXI-Lite, which requires your module under test to extend `axi.HasAxiLite32IO` from the `chisel-axi-utils` submodule. To activate protocol contracts, use the `conformsTo` function on the AxiLite32IO bus, e.g. `S.AXI conformsTo AxiLite32Slave` with infix notation.
 
 ### Basics: Annotating the Memory Map
 
@@ -51,12 +59,9 @@ class MacSpec(p: MacModuleParams) extends Axi4LiteMac(p) with MalletSpec {
 }
 ```
 
-The address is the subject of every line, so the left column reads top-to-bottom as the memory map itself. Each line adds its properties and corresponding registers to a queue, and `done()` flushes them all at the end. Because the properties are rendered from the design, design-spec naming and typing drift is a compile-time error rather than a runtime one. For example:
+The address is the subject of every line, so the left column reads top-to-bottom as the memory map itself. Each line adds its properties and corresponding registers to a queue, and `done()` flushes them all at the end.
 
-- `is` is only defined on `Long`, and `chisel-axi-utils` types addresses as `Long` and dimensions as `Int`, so `p.width_p is Operand` won't typecheck -- you can only annotate a real address.
-- The `at <signal>` clause carries the actual typed Chisel signal instead of a string. `Operand`/`Result` demand a multi-bit `UInt`; `Status`/`Commit` demand a `Bool`. Roles with incorrectly-typed signals won't compile, and renamed or deleted registers won't compile.
-
-A **role** is a memory-map access mode plus a meaning. The **access modes** are `RO`, `WO`, `RW`, `W1C`. A role refines one of these and emits properties automatically:
+A role is a memory-map access mode plus a meaning. The **access modes** are `RO`, `WO`, `RW`, `W1C`. A **role** refines one of these and emits properties automatically:
 
 | Role | Implies | Subject | Emits... |
 | ---- | ------- | ------- | -------- |
@@ -67,11 +72,11 @@ A **role** is a memory-map access mode plus a meaning. The **access modes** are 
 
 Note that an address can also carry a bare access mode with no role (`p.soft_reset_rw is RW`), which just documentation (for now).
 
-`S.AXI conformsTo AxiLite32Slave` stands in for the whole protocol contract from the section above. Manually written temporal logic (a la Chisel `AssertProperty()`) can be written via `property(name) { ... }` with the added benefit of `|=>` support,  warm-up masking to prevent counterexamples before reset, and the fragment guards for free.
+Manually written temporal logic (a la Chisel `AssertProperty()`) can be written via `property(name) { ... }` with the added benefit of `|=>` support, automatic warm-up masking to prevent counterexamples before reset, and the fragment guards for free.
 
 ### Basics: Adjudication
 
-A `mallet` run queues up threads for each {property, backend engine} combination, and reports them in an *adjudication matrix*. After all combinations have executed or the timeout (default: 120s) is reached, the matrix is populated with the results from each backend. These results combine to compose a verdict for each property, which can take one of the following values:
+A `mallet` run queues up threads for each {property, backend engine} combination, and reports them in an *adjudication matrix*. After all combinations have executed or the timeout (default: 20s) is reached, the matrix is populated with the results from each backend. These results combine to compose a verdict for each property, which can take one of the following values:
 
 - PROVEN   = An unbounded proof was found.
 - NOCEX    = No counterexample was found within `kmax` cycles. Bounded, not a proof.
