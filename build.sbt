@@ -6,7 +6,18 @@ Test / testOptions       += Tests.Argument(TestFrameworks.ScalaTest, "-oF")
 val chiselVersion    = "7.13.0"
 val scalatestVersion = "3.2.19"
 
+// add macro for better signal extraction pre-compile
+lazy val macros = (project in file("macros"))
+  .settings(
+    name := "mallet-macros",
+    libraryDependencies ++= Seq(
+      "org.chipsalliance" %% "chisel"        % chiselVersion,
+      "org.scala-lang"     % "scala-reflect" % scalaVersion.value,
+    ),
+  )
+
 lazy val root = (project in file("."))
+  .dependsOn(macros)
   .settings(
     name := "mallet",
     libraryDependencies ++= Seq(
@@ -28,6 +39,7 @@ lazy val root = (project in file("."))
       "-feature",
       "-Xcheckinit",
       "-Ymacro-annotations",
+      "-Yrangepos",
       // next two lines allow Mallet role errors
       "-Wnonunit-statement",
       "-Wconf:msg=unused value of type:s,msg=unused value of type .*(ResultNeedsValidWhen|CommitNeedsRequiring|CommitNeedsAcceptedOn).*:e",

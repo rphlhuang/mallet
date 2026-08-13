@@ -31,9 +31,11 @@ trait MalletSpec extends MalletProperties { this: chisel3.Module with HasAxiLite
   protected def property(name: String, desc: String)(e: Prop): Unit =
     enqueue(NamedProp.assert(name, e, desc))
 
-  // Let a bare Chisel Bool stand in for an Expr inside a property block.
+  // Let a bare Chisel Bool stand in for an Expr inside a property block
+  // Old boolToExpr did this after elaboration; instead we use a Macro to extract the name before compiling
   import scala.language.implicitConversions
-  protected implicit def boolToExpr(b: Bool): B = B(b)
+  import scala.language.experimental.macros
+  protected implicit def boolToExpr(b: Bool): B = macro MalletMacros.boolToExprImpl
 
   // Protocol contract
   protected val AxiLite32Slave: ContractSet[AxiLite32] = AxiLite32Contract
@@ -67,7 +69,7 @@ trait MalletSpec extends MalletProperties { this: chisel3.Module with HasAxiLite
     def is(r: Operand.type): OperandBuilder = new OperandBuilder(addr)
     def is(r: Status.type):  StatusBuilder  = new StatusBuilder(addr)
     def is(r: Result.type):  ResultBuilder  = new ResultBuilder(addr)
-    def is(r: Commit.type):  CommitBuilder   = new CommitBuilder(addr)
+    def is(r: Commit.type):  CommitBuilder  = new CommitBuilder(addr)
   }
 
   protected class OperandBuilder(addr: Long) {

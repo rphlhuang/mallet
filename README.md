@@ -45,7 +45,7 @@ This will also install the `chisel-axi-bridge` python module as a package from `
 
 | Target | Description |
 | ------ | ----------- |
-| `make mallet` | per-property formal report, `KMAX=` sets the BMC bound (default 20) for mallet |
+| `make mallet` | run whole Mallet flow; `KMAX=` sets the BMC bound (default 20), `TIMEOUT=` sets timeout (default 20s) |
 | `make chiselsim` | run the Chisel scalatest suite (sbt test), `FORCE=1` forces all tests to run |
 | `make cocotb` | run every cocotb testbench under tests/ |
 | `make gen` | re-elaborate every Chisel App to SystemVerilog |
