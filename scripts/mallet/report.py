@@ -10,6 +10,7 @@ import json
 from datetime import datetime
 
 from model import Cell, ModuleResult, Outcome
+from rollup import is_axi, rollup
 
 REPORT_LOG = "generated/mallet-report.log"
 MATRIX_JSONL = "generated/mallet-matrix.jsonl"
@@ -26,8 +27,30 @@ def cell_str(c: Cell) -> str:
         return _CELL_SHORT[c.outcome]
     return str(c)  # NOCEX-k / CEX@d
 def tier(name: str) -> str:
-    """Tier-1 reusable protocol contract vs Tier-2 design-specific hand property."""
-    return "contract" if name.startswith("axi_") else "design"
+    return "contract" if is_axi(name) else "design"
+
+
+def _row_line(module: str, p, s, engine_names: list[str], indent: int = 0) -> str:
+    by_engine = {c.engine: c for c in p.cells}
+    cells_str = "".join(
+        f"{(cell_str(by_engine[e]) if e in by_engine else '-'):<9}" for e in engine_names
+    )
+    verdict = s.verdict + (" *" if s.disagreement else "")
+    reach = p.reach if not p.is_assume else "-"
+    name = (" " * indent) + p.name
+    return (f"  {module:<18} {name:<22} {p.max_past:>4} {reach:>3}  "
+            f"{cells_str}{verdict:<9} {p.nl}")
+
+
+def _axi_parent_line(module: str, verdict: str, disagreement: bool,
+                     engine_names: list[str], n_guar: int, n_assume: int,
+                     n_vac: int = 0) -> str:
+    cells_str = "".join(f"{'-':<9}" for _ in engine_names)
+    v = (verdict or "-") + (" *" if disagreement else "")
+    parts = f"{n_guar} guaranteed, {n_assume} assumed" + (f", {n_vac} vacuous" if n_vac else "")
+    english = f"AXI4-Lite slave contract rollup ({parts})"
+    return (f"  {module:<18} {'AXI':<22} {'-':>4} {'-':>3}  "
+            f"{cells_str}{v:<9} {english}")
 
 
 # ----- HUMAN REPORT -----
@@ -57,20 +80,29 @@ def render_human(results: list[ModuleResult], meta: dict, engine_names: list[str
                        f"{'':<{9*len(engine_names)}}{'ERROR':<9} {r.emission_error}")
             n["ERROR"] += 1
             continue
+        # AXI contract properties are grouped under parent row
+        axi_props = [p for p in r.props if is_axi(p.name)]
+        axi_verdict = rollup(r.summaries[p.label].verdict for p in axi_props)
+        axi_disagree = any(r.summaries[p.label].disagreement for p in axi_props)
+        n_assume = sum(1 for p in axi_props if p.is_assume)
+        n_vac = sum(1 for p in axi_props
+                    if not p.is_assume and r.summaries[p.label].verdict in ("VACUOUS", "FOLDED"))
+        printed_axi = False
+
         for p in r.props:
             s = r.summaries[p.label]
             n[s.verdict] = n.get(s.verdict, 0) + 1
-            by_engine = {c.engine: c for c in p.cells}
-            cells_str = "".join(
-                f"{(cell_str(by_engine[e]) if e in by_engine else '-'):<9}"
-                for e in engine_names
-            )
-            verdict = s.verdict + (" *" if s.disagreement else "")
-            reach = p.reach if not p.is_assume else "-"
-            out.append(
-                f"  {r.module:<18} {p.name:<22} {p.max_past:>4} {reach:>3}  "
-                f"{cells_str}{verdict:<9} {p.nl}"
-            )
+            if is_axi(p.name):
+                if not printed_axi:  # emit the whole AXI block at once
+                    out.append(_axi_parent_line(
+                        r.module, axi_verdict, axi_disagree, engine_names,
+                        len(axi_props) - n_assume - n_vac, n_assume, n_vac))
+                    for q in axi_props:
+                        out.append(_row_line(r.module, q, r.summaries[q.label],
+                                             engine_names, indent=2))
+                    printed_axi = True
+            else:
+                out.append(_row_line(r.module, p, s, engine_names))
             if s.verdict in ("REFUTED", "CONFLICT"):
                 tag = "CONFLICT" if s.disagreement else "refuted"
                 line = f"--- {r.module} / {p.name}  [{tag}] {s.detail} ---\n    {s.provenance}"

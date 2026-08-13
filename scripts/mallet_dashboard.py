@@ -6,10 +6,16 @@ from __future__ import annotations
 import html
 import json
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Reuse the report's AXI rollup so the dashboard never derives the verdict
+# differently from the human report / CLI.
+sys.path.insert(0, str(ROOT / "scripts" / "mallet"))
+from rollup import is_axi, rollup  # noqa: E402
+
 REPORT_LOG = ROOT / "generated" / "mallet-report.log"
 MATRIX_JSONL = ROOT / "generated" / "mallet-matrix.jsonl"
 OUT = ROOT / "generated" / "mallet-dashboard.html"
@@ -165,7 +171,7 @@ def render_row(run: Run, row: Row, wc: dict) -> str:
     )
 
 
-def render_module_table(run: Run, module: str, rows: list[Row], wc: dict) -> str:
+def render_table(run: Run, rows: list[Row], wc: dict) -> str:
     e = html.escape
     header_cells = '<th class="prop">Property</th><th class="past">Past</th>'
     if run.engine_names:
@@ -174,9 +180,61 @@ def render_module_table(run: Run, module: str, rows: list[Row], wc: dict) -> str
     header_cells += '<th class="verdict">Verdict</th><th class="english">English</th>'
     body = "\n".join(render_row(run, r, wc) for r in rows)
     return (
-        f'<h3>{e(module)}</h3>'
         f'<div class="table-wrap"><table><thead><tr>{header_cells}</tr></thead>'
         f"<tbody>{body}</tbody></table></div>"
+    )
+
+
+def verdict_badge(verdict: str, disagreement: bool, prefix: str = "") -> str:
+    cls = f"v-{verdict}" + (" disagree" if disagreement else "")
+    text = (prefix + verdict + (" *" if disagreement else "")).strip()
+    return f'<span class="badge {cls}">{html.escape(text)}</span>'
+
+
+def count_badges(rows: list[Row]) -> str:
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r.verdict] = counts.get(r.verdict, 0) + 1
+    return "".join(
+        f'<span class="badge v-{v}">{v}={counts[v]}</span>'
+        for v in VERDICTS if counts.get(v)
+    )
+
+
+def render_module(run: Run, module: str, rows: list[Row], wc: dict) -> str:
+    """A collapsible module panel; its axi_* rows live in a nested collapsible
+    AXI-contract group headed by the rolled-up verdict."""
+    e = html.escape
+    parent = next((r for r in rows if r.prop == "AXI"), None)   # synthetic rollup row
+    axi = [r for r in rows if is_axi(r.prop)]                   # axi_* children
+    design = [r for r in rows if r.prop != "AXI" and not is_axi(r.prop)]
+
+    body = ""
+    if design:
+        body += render_table(run, design, wc)
+    if axi:
+        if parent is not None:                     # verdict computed by report.py
+            axi_v, axi_dis = parent.verdict, parent.disagreement
+        else:                                      # older run: derive it the same way
+            axi_v = rollup([r.verdict for r in axi]) or "UNKNOWN"
+            axi_dis = any(r.disagreement for r in axi)
+        n_vac = sum(1 for r in axi if r.verdict in ("VACUOUS", "FOLDED"))
+        vac_note = f'<span class="grp-vac">{n_vac} vacuous</span>' if n_vac else ""
+        body += (
+            '<details class="axi-group">'
+            '<summary><span class="grp-name">AXI contract</span>'
+            f'{verdict_badge(axi_v, axi_dis, prefix="AXI ")}{vac_note}'
+            f'<span class="grp-count">{len(axi)} properties</span></summary>'
+            f'{render_table(run, axi, wc)}</details>'
+        )
+
+    real_rows = design + axi
+    return (
+        '<details class="module" open>'
+        f'<summary><span class="mod-name">{e(module)}</span>'
+        f'{count_badges(real_rows)}</summary>'
+        f'<div class="module-body">{body}</div>'
+        '</details>'
     )
 
 
@@ -185,7 +243,7 @@ def render_run(idx: int, run: Run, wc: dict, checked: bool) -> tuple[str, str]:
     tab_input = f'<input type="radio" name="runtab" id="run{idx}" class="tab-input"{" checked" if checked else ""}>'
     tab_label = f'<label for="run{idx}" class="tab-label">{e(run.ts)}</label>'
     tables = "\n".join(
-        render_module_table(run, mod, rows, wc) for mod, rows in run.modules.items()
+        render_module(run, mod, rows, wc) for mod, rows in run.modules.items()
     )
     content = (
         f'<section id="content{idx}" class="tab-content">'
@@ -229,6 +287,31 @@ h1 { font-size: 16px; margin: 0 0 4px; }
 }
 .badge-tail { color: var(--muted); font-size: 11px; }
 h3 { font-size: 13px; margin: 20px 0 6px; color: var(--accent); }
+
+/* collapsible module panel */
+details.module { border: 1px solid var(--border); border-radius: 4px; margin: 10px 0; background: var(--panel); }
+details.module > summary { list-style: none; cursor: pointer; padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+details.module > summary::-webkit-details-marker { display: none; }
+details.module > summary::before { content: "\\25B8"; color: var(--muted); font-size: 10px;
+  display: inline-block; transition: transform .12s; }
+details.module[open] > summary::before { transform: rotate(90deg); }
+.mod-name { color: var(--accent); font-weight: 700; font-size: 13px; margin-right: 4px; }
+.module-body { padding: 0 12px 10px; }
+
+/* collapsible AXI-contract group within a module */
+details.axi-group { border: 1px solid var(--border); border-radius: 4px; margin: 8px 0; background: var(--bg); }
+details.axi-group > summary { list-style: none; cursor: pointer; padding: 6px 10px;
+  display: flex; align-items: center; gap: 8px; }
+details.axi-group > summary::-webkit-details-marker { display: none; }
+details.axi-group > summary::before { content: "\\25B8"; color: var(--muted); font-size: 10px;
+  display: inline-block; transition: transform .12s; }
+details.axi-group[open] > summary::before { transform: rotate(90deg); }
+.grp-name { color: var(--text); font-weight: 600; font-size: 12px; }
+.grp-vac { color: var(--vacuous); font-size: 11px; }
+.grp-count { color: var(--muted); font-size: 11px; margin-left: auto; }
+details.axi-group .table-wrap { margin: 0 10px 10px; }
+
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 8px; }
 table { border-collapse: collapse; width: 100%; min-width: 600px; }
 th, td { padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -251,9 +334,9 @@ td.verdict { font-weight: 700; white-space: nowrap; }
 .badge.v-CONFLICT { border-color: var(--conflict); color: var(--conflict); }
 .badge.v-VACUOUS, .badge.v-FOLDED { border-color: var(--vacuous); color: var(--vacuous); }
 .badge.v-ASSUMED { border-color: var(--assumed); color: var(--assumed); }
-details { display: inline; }
-summary { display: inline; cursor: pointer; color: var(--accent); font-size: 11px; margin-left: 6px; }
-details pre {
+td.english details { display: inline; }
+td.english summary { display: inline; cursor: pointer; color: var(--accent); font-size: 11px; margin-left: 6px; }
+td.english details pre {
   display: block; white-space: pre-wrap; background: #0a0c10; border: 1px solid var(--border);
   border-radius: 4px; padding: 8px; margin: 6px 0 0; font-size: 11px; color: var(--text);
 }
