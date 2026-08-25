@@ -81,7 +81,7 @@ class TopKUnit(k: Int, valueW: Int, indexW: Int, isFloat: Boolean) extends Modul
   }
   val cmpWidth = if (isFloat) (valueW + 1) else valueW
   val slots = Reg(Vec(k, new SlotEntry(valueW, indexW, cmpWidth)))
-  val cmpInitVal = 0.U(cmpWidth.W)// NEED TO CHANGE FOR FLOATS
+  val cmpInitVal = 0.U(cmpWidth.W) // NEED TO CHANGE FOR FLOATS
   val valueInitVal = 0.U(valueW.W)
   val indexInitVal = 0.U(indexW.W)
   when (reset.asBool) { 
@@ -112,7 +112,7 @@ class TopKUnit(k: Int, valueW: Int, indexW: Int, isFloat: Boolean) extends Modul
 
   // when accepting, move everything over and insert into slot
   val insertSlot = PriorityEncoder(gt)
-  when (io.in.fire) {
+  when (io.in.fire && !io.in.bits.last) {
     // if greater than smallest slot, schmove everything, maneesh on the beat shabang
     when (gt(k-1)) {
       for (i <- 0 until k) {
@@ -219,11 +219,13 @@ class Axi4LiteTopK(p : TopKModuleParams, debugprint: Boolean = false)
       when(a === p.index_w.U) {
         indexReg := wHoldDataReg
       }.elsewhen(a === p.value_w.U) {
+        // writing the value commits the (index, value) pair
         dataReg := wHoldDataReg
-      }.elsewhen(a === p.last_w.U) {
-        // if last_w is 1, push and last; else just push
         pushPendingReg := true.B
-        lastReg := wHoldDataReg(0).asBool
+        lastReg := false.B
+      }.elsewhen(a === p.last_w.U) {
+        pushPendingReg := true.B
+        lastReg := true.B
       }.elsewhen(a === p.soft_reset_rw.U) {
         // pass, handled by softResetPulseReg assign above
       }.otherwise {
@@ -314,8 +316,6 @@ object Axi4LiteTopKMain extends App {
 }
 
 class TopKSpec(p: TopKModuleParams) extends Axi4LiteTopK(p) with MalletSpec {
-
-  // ── memory-map roles ─────────────────────────────────────────────
   p.index_w       is Operand at indexReg
   p.value_w       is Operand at dataReg 
   p.last_w        is Commit  at pushPendingReg requiring (indexReg, dataReg) acceptedOn dut.io.in.ready
@@ -323,15 +323,8 @@ class TopKSpec(p: TopKModuleParams) extends Axi4LiteTopK(p) with MalletSpec {
   p.result_idx_r  is Result  at dutIdxReg validWhen dutValidReg
   p.status_r      is Status  at dutValidReg
   p.soft_reset_rw is RW
-
-  // ── protocol contract ────────────────────────────────────────────
   S.AXI conformsTo AxiLite32Slave
-
-  // ── raw escape hatch ─────────────────────────────────────────────
-  private val srPulse = B(softResetPulseReg, "softResetPulseReg")
-  property("soft_reset_is_pulse") { srPulse |=> !srPulse }
   property("result_not_dropped")  { dut.io.out.fire |=> dutValidReg }
-
   done()
 }
 

@@ -22,9 +22,8 @@ class Axi4LiteTopKSpec extends AnyFlatSpec with ChiselSim {
       for (index <- 0 until 5) {
         assert(bfm.writeVal(p.index_w, index) == 0, f"\nWrite $index to index_w failed")
         assert(bfm.writeVal(p.value_w, 5 + index) == 0, f"\nWrite ${5 + index} to value_w failed")
-        val isLast = if (index == 4) 1 else 0
-        assert(bfm.writeVal(p.last_w, isLast) == 0, f"\nWrite $isLast to last_w failed")
       }
+      assert(bfm.writeVal(p.last_w, 1) == 0, f"\nWrite 1 to last_w failed")
 
       // wait for dut by querying status_r
       var data = 0
