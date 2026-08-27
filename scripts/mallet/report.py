@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 from model import Cell, ModuleResult, Outcome
-from rollup import is_axi, rollup
+from rollup import is_axi, is_transport, rollup
 
 REPORT_LOG = "generated/mallet-report.log"
 MATRIX_JSONL = "generated/mallet-matrix.jsonl"
@@ -26,8 +26,8 @@ def cell_str(c: Cell) -> str:
     if c.outcome in _CELL_SHORT:
         return _CELL_SHORT[c.outcome]
     return str(c)  # NOCEX-k / CEX@d
-def tier(name: str) -> str:
-    return "contract" if is_axi(name) else "design"
+def tier(p) -> str:
+    return getattr(p, "tier", None) or ("transport" if is_axi(p.name) else "manual")
 
 
 def _row_line(module: str, p, s, engine_names: list[str], indent: int = 0) -> str:
@@ -81,7 +81,7 @@ def render_human(results: list[ModuleResult], meta: dict, engine_names: list[str
             n["ERROR"] += 1
             continue
         # AXI contract properties are grouped under parent row
-        axi_props = [p for p in r.props if is_axi(p.name)]
+        axi_props = [p for p in r.props if is_transport(p)]
         axi_verdict = rollup(r.summaries[p.label].verdict for p in axi_props)
         axi_disagree = any(r.summaries[p.label].disagreement for p in axi_props)
         n_assume = sum(1 for p in axi_props if p.is_assume)
@@ -92,7 +92,7 @@ def render_human(results: list[ModuleResult], meta: dict, engine_names: list[str
         for p in r.props:
             s = r.summaries[p.label]
             n[s.verdict] = n.get(s.verdict, 0) + 1
-            if is_axi(p.name):
+            if is_transport(p):
                 if not printed_axi:  # emit the whole AXI block at once
                     out.append(_axi_parent_line(
                         r.module, axi_verdict, axi_disagree, engine_names,
@@ -147,7 +147,7 @@ def _base_row(meta: dict, r: ModuleResult, p, s) -> dict:
         "property": p.name,
         "label": p.label,
         "shape": p.shape,
-        "tier": tier(p.name),
+        "tier": tier(p),
         "kind": p.kind,
         "max_past": p.max_past,
         "emission_status": p.emission.value,
