@@ -42,6 +42,7 @@ object MalletRegistry {
     idx:    Int,
     maxPast: Int,
     kind:   PropKind,
+    tier:   Tier,                // which of the three tiers produced it
     coverLabel: Option[String]   // reachability cover for this property, if any
   )
 
@@ -81,10 +82,11 @@ object MalletRegistry {
     note:   String,
     idx:    Int,
     kind:   PropKind,
+    tier:   Tier,
     coverLabel: Option[String]
-  ): Unit = entries += Entry(module, label, name, prop, note, idx, prop.maxPast, kind, coverLabel)
+  ): Unit = entries += Entry(module, label, name, prop, note, idx, prop.maxPast, kind, tier, coverLabel)
 
-  // Write the per-module sidecar; call after emitCHIRRTLFile returns
+  // write the per-module sidecar; call after emitCHIRRTLFile returns
   def writeSidecar(dir: String, chiselVersion: String = "7.13.0"): Unit = {
     if (entries.isEmpty) return
     val d = os.Path(dir, os.pwd)
@@ -98,6 +100,7 @@ object MalletRegistry {
           "idx"     -> e.idx,
           "maxPast" -> e.maxPast,
           "kind"    -> (e.kind match { case AssertK => "assert"; case AssumeK => "assume" }),
+          "tier"    -> e.tier.label,
           "shape"   -> (e.prop match {
                           case _: Implies => "implies"
                           case _: Always  => "always"
@@ -122,7 +125,7 @@ object MalletRegistry {
 // Chisel Module mix-in to give it property-elaboration machinery 
 trait MalletProperties { this: chisel3.Module =>
 
-  // Override to switch past(n) realisation; see PastBackend
+  // override to switch past(n) realisation; see PastBackend
   def pastBackend: PastBackend = LtlPast
 
   private val warmCache = mutable.Map.empty[Int, Bool]
@@ -141,11 +144,11 @@ trait MalletProperties { this: chisel3.Module =>
       val coverLabel =
         if (np.kind == AssertK) Render.coverLabelFor(label, np.prop) else None
       if (MalletRegistry.coversEnabled) coverLabel.foreach(cl => Render.emitCover(cl, np.prop, warm))
-      MalletRegistry.register(module, label, np.name, np.prop, np.note, propIdx, np.kind, coverLabel)
+      MalletRegistry.register(module, label, np.name, np.prop, np.note, propIdx, np.kind, np.tier, coverLabel)
     }
   }
 
   // Attach a whole protocol contract set to this module
   protected def contract[B](set: _root_.mallet.contract.ContractSet[B], bundle: B): Unit =
-    mallet(set.properties(bundle): _*)
+    mallet(set.properties(bundle).map(_.copy(tier = Transport)): _*)
 }

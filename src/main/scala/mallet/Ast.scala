@@ -164,14 +164,30 @@ sealed trait PropKind
 case object AssertK extends PropKind
 case object AssumeK extends PropKind
 
-// Frontend of Ast.scala: a property plus its stable identity, description, and kind
-final case class NamedProp(name: String, prop: Prop, note: String = "", kind: PropKind = AssertK)
+// Tiers are properties' tracable birthplace
+// Transport - fully determined by the protocol type
+//             e.g. S.AXI conformsTo AxiLite32Slave
+// MemMap    - auto-generated from the memory-map annotations
+// Manual    - hand written via property(...) / assume(...)
+sealed abstract class Tier(val label: String)
+case object Transport extends Tier("transport")
+case object MemMap    extends Tier("memmap")
+case object Manual    extends Tier("manual")
+
+// central construct of Mallet's grammar
+final case class NamedProp(
+  name: String,
+  prop: Prop,
+  note: String = "",
+  kind: PropKind = AssertK,
+  tier: Tier = Manual
+)
 
 object NamedProp {
-  def assert(name: String, prop: Prop, note: String = ""): NamedProp =
-    NamedProp(name, prop, note, AssertK)
-  def assume(name: String, prop: Prop, note: String = ""): NamedProp =
-    NamedProp(name, prop, note, AssumeK)
+  def assert(name: String, prop: Prop, note: String = "", tier: Tier = Manual): NamedProp =
+    NamedProp(name, prop, note, AssertK, tier)
+  def assume(name: String, prop: Prop, note: String = "", tier: Tier = Manual): NamedProp =
+    NamedProp(name, prop, note, AssumeK, tier)
 }
 
 // ---------------------------------------------------------------------------
