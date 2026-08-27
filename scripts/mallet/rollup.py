@@ -14,6 +14,9 @@ def is_axi(name: str) -> bool:
     return name.startswith("axi_")
 
 
+def is_transport(p) -> bool:
+    return getattr(p, "tier", None) == "transport" or is_axi(p.name)
+
 def rollup(verdicts) -> str | None:
     present = [v for v in verdicts if v]
     if not present:

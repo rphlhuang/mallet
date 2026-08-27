@@ -61,6 +61,7 @@ class Property:
     name: str                       # human name, e.g. axi_b_valid_stable
     idx: int
     kind: str                       # "assert" or "assume"
+    tier: str                       # "transport" | "memmap" | "manual"
     shape: str                      # template: "implies" or "always" or ...
     max_past: int
     nl: str
@@ -84,6 +85,10 @@ class Property:
             name=d["name"],
             idx=d.get("idx", -1),
             kind=d.get("kind", "assert"),
+            # older sidecars predate the tier field; fall back to the name prefix
+            tier=d.get("tier") or ("transport" if d["name"].startswith("axi_")
+                                   else "memmap" if d["name"].startswith("mm_")
+                                   else "manual"),
             shape=d.get("shape", ""),
             max_past=d.get("maxPast", 0),
             nl=d.get("nl", ""),
