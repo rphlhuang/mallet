@@ -6,39 +6,15 @@ import mallet._
 import axi.AxiLite32
 import axi.AxiLiteResp._
 
-/** The AXI4-Lite slave contract.
-  *
-  * Direction matters. From the SLAVE's point of view:
-  *   - the slave DRIVES awready, wready, bvalid, bresp, arready, rvalid, rdata,
-  *     rresp  -> obligations, emitted as ASSERT.
-  *   - the master DRIVES awvalid/awaddr, wvalid/wdata/wstrb, bready, arvalid/
-  *     araddr, rready  -> environment, emitted as ASSUME.
-  *
-  * The assumes are not decoration: without them the model checker drives the
-  * input channels adversarially and can violate AXI on the master side (e.g.
-  * dropping AWVALID mid-handshake), producing spurious counterexamples on the
-  * slave's own properties. The assumes constrain the environment to a
-  * well-behaved master, which is exactly the setting the slave was designed for.
-  *
-  * Increment 1 (no auxiliary hardware):
-  *   - VALID stability on all five channels: once VALID is asserted it must be
-  *     held until the handshake completes. Master-driven VALIDs assumed;
-  *     slave-driven VALIDs asserted.
-  *   - Response-code legality: AXI4-Lite forbids EXOKAY (no exclusive access).
-  *
-  * Increment 2 (needs monitor registers, see Monitors):
-  *   - Payload stability: address / data / strobe / response must be held stable
-  *     while their channel is stalled (VALID && !READY). Master payloads assumed;
-  *     slave payloads asserted.
-  *   - No unsolicited response: a B/R response only appears while a matching
-  *     request is outstanding.
-  */
 object AxiLite32Contract extends ContractSet[AxiLite32] {
 
   def name: String = "AXI4-Lite slave"
 
+  private val asAssert: (String, Prop, String) => NamedProp = NamedProp.assert(_, _, _)
+  private val asAssume: (String, Prop, String) => NamedProp = NamedProp.assume(_, _, _)
+
   def properties(axi: AxiLite32): Seq[NamedProp] = {
-    // VALID stability: `valid && !ready |=> valid`.
+    // VALID stability: valid && !ready |=> valid.
     def validStable(name: String, valid: Bool, ready: Bool, chan: String)
                    (mk: (String, Prop, String) => NamedProp): NamedProp =
       mk(
@@ -57,13 +33,12 @@ object AxiLite32Contract extends ContractSet[AxiLite32] {
     val rFire  = axi.rvalid  && axi.rready
 
     Seq(
-      // ================= Increment 1 =====================================
       // ---- VALID stability: master assumed, slave asserted --------------
-      validStable("axi_aw_valid_stable", axi.awvalid, axi.awready, "aw")(NamedProp.assume),
-      validStable("axi_w_valid_stable",  axi.wvalid,  axi.wready,  "w")(NamedProp.assume),
-      validStable("axi_ar_valid_stable", axi.arvalid, axi.arready, "ar")(NamedProp.assume),
-      validStable("axi_b_valid_stable",  axi.bvalid,  axi.bready,  "b")(NamedProp.assert),
-      validStable("axi_r_valid_stable",  axi.rvalid,  axi.rready,  "r")(NamedProp.assert),
+      validStable("axi_aw_valid_stable", axi.awvalid, axi.awready, "aw")(asAssume),
+      validStable("axi_w_valid_stable",  axi.wvalid,  axi.wready,  "w")(asAssume),
+      validStable("axi_ar_valid_stable", axi.arvalid, axi.arready, "ar")(asAssume),
+      validStable("axi_b_valid_stable",  axi.bvalid,  axi.bready,  "b")(asAssert),
+      validStable("axi_r_valid_stable",  axi.rvalid,  axi.rready,  "r")(asAssert),
 
       // ---- response legality (slave-driven) -----------------------------
       NamedProp.assert(
@@ -77,17 +52,16 @@ object AxiLite32Contract extends ContractSet[AxiLite32] {
         "AXI4-Lite: read response is never EXOKAY (no exclusive access)"
       ),
 
-      // ================= Increment 2 =====================================
       // ---- payload stability while stalled: master assumed --------------
-      Monitors.stableWhileStalled("axi_awaddr_stable", axi.awvalid, axi.awready, axi.awaddr, "awaddr", NamedProp.assume),
-      Monitors.stableWhileStalled("axi_wdata_stable",  axi.wvalid,  axi.wready,  axi.wdata,  "wdata",  NamedProp.assume),
-      Monitors.stableWhileStalled("axi_wstrb_stable",  axi.wvalid,  axi.wready,  axi.wstrb,  "wstrb",  NamedProp.assume),
-      Monitors.stableWhileStalled("axi_araddr_stable", axi.arvalid, axi.arready, axi.araddr, "araddr", NamedProp.assume),
+      Monitors.stableWhileStalled("axi_awaddr_stable", axi.awvalid, axi.awready, axi.awaddr, "awaddr", asAssume),
+      Monitors.stableWhileStalled("axi_wdata_stable",  axi.wvalid,  axi.wready,  axi.wdata,  "wdata",  asAssume),
+      Monitors.stableWhileStalled("axi_wstrb_stable",  axi.wvalid,  axi.wready,  axi.wstrb,  "wstrb",  asAssume),
+      Monitors.stableWhileStalled("axi_araddr_stable", axi.arvalid, axi.arready, axi.araddr, "araddr", asAssume),
 
       // ---- payload stability while stalled: slave asserted --------------
-      Monitors.stableWhileStalled("axi_bresp_stable", axi.bvalid, axi.bready, axi.bresp, "bresp", NamedProp.assert),
-      Monitors.stableWhileStalled("axi_rdata_stable", axi.rvalid, axi.rready, axi.rdata, "rdata", NamedProp.assert),
-      Monitors.stableWhileStalled("axi_rresp_stable", axi.rvalid, axi.rready, axi.rresp, "rresp", NamedProp.assert),
+      Monitors.stableWhileStalled("axi_bresp_stable", axi.bvalid, axi.bready, axi.bresp, "bresp", asAssert),
+      Monitors.stableWhileStalled("axi_rdata_stable", axi.rvalid, axi.rready, axi.rdata, "rdata", asAssert),
+      Monitors.stableWhileStalled("axi_rresp_stable", axi.rvalid, axi.rready, axi.rresp, "rresp", asAssert),
 
       // ---- no unsolicited response (slave asserted) ---------------------
       Monitors.writeResponseSolicited(
