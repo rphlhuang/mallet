@@ -11,7 +11,7 @@ import chisel3._
 import chisel3.util._
 import _root_.circt.stage.ChiselStage
 
-import mallet.{MalletSpec, MalletRegistry, Operand, Status, Result, Commit, RW, B}
+import mallet.{MalletSpec, MalletRegistry, Status, Result, Commit, WO, B}
 
 case class FPAddModuleParams( // Note: do not put default value here
                             // params suffixed with _r, _w, or _rw represent addresses
@@ -239,12 +239,12 @@ object Axi4LiteFPAddMain extends App {
 class FPAddSpec(p: FPAddModuleParams) extends Axi4LiteFPAdd(p) with MalletSpec {
 
   // ── memory-map roles ─────────────────────────────────────────────
-  p.a_w           is Operand at aReg
-  p.b_w           is Operand at bReg
-  p.push_w        is Commit  at pushPendingReg requiring (aReg, bReg) acceptedOn dut.io.in.ready
-  p.status_r      is Status  at dutValidReg
-  p.result_r      is Result  at dutDataReg validWhen dutValidReg
-  p.soft_reset_rw is RW
+  p.a_w           is WO
+  p.b_w           is WO
+  p.push_w        is Commit requiring (p.a_w, p.b_w)
+  p.status_r      is Status  setBy   p.push_w
+  p.result_r      is Result  gatedBy p.status_r
+  p.soft_reset_rw is WO      // named _rw, but this design does not decode it for reads at all
 
   // ── protocol contract ────────────────────────────────────────────
   S.AXI conformsTo AxiLite32Slave

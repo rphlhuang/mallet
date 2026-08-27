@@ -100,17 +100,6 @@ trait MalletSpec extends MalletProperties { this: chisel3.Module with HasAxiLite
     def requiring(operandAddrs: Long*): Unit = { d.requires = operandAddrs }
   }
 
-  // ---- error policy ------------------------------------------------------------
-
-  private var policyReadErrors  = true
-  private var policyWriteErrors = true
-
-  // opt out of error-response enforcement for a map that does not want one
-  protected def errorPolicy(readErrors: Boolean = true, writeErrors: Boolean = true): Unit = {
-    policyReadErrors  = readErrors
-    policyWriteErrors = writeErrors
-  }
-
   // ---- generation ------------------------------------------------------------
 
   private lazy val mon = new MapMonitors(S.AXI)
@@ -137,12 +126,12 @@ trait MalletSpec extends MalletProperties { this: chisel3.Module with HasAxiLite
 
     // access-mode obligations
     // note that we cannot enfoce OKAYs, since real errors (e.g. backpressure, waiting) could produce ERRs
-    if (!d.access.writable && policyWriteErrors)
+    if (!d.access.writable)
       ps += mm(s"mm_write_errs_$hx",
                writeOf(a) ==> brespIs(SLVERR, "SLVERR"),
                s"a write to $hx must be refused; it is ${d.access.label}")
 
-    if (!d.access.readable && policyReadErrors)
+    if (!d.access.readable)
       ps += mm(s"mm_read_errs_$hx",
                readOf(a) ==> rrespIs(SLVERR, "SLVERR"),
                s"a read of $hx must be refused; it is ${d.access.label}")
@@ -171,9 +160,9 @@ trait MalletSpec extends MalletProperties { this: chisel3.Module with HasAxiLite
                s"a read of $hx while the last read of ${hex(s)} reported not-ready must be refused")
     }
 
-    // provenance: status never reports ready unless the commit address was actually written
+    // solicited: status never reports ready unless the commit address was actually written
     d.setBy.foreach { c =>
-      ps += mm(s"mm_provenance_$hx",
+      ps += mm(s"mm_solicited_$hx",
                (readOf(a) && Cmp(CmpOp.Eq, Slice(S.AXI.rdata, 0, 0, "rdata"), Lit(BigInt(1), "1"))) ==>
                  B(mon.writtenSince(c), s"written_${hex(c)}"),
                s"$hx reports ready only if ${hex(c)} was written since reset")
@@ -202,22 +191,17 @@ trait MalletSpec extends MalletProperties { this: chisel3.Module with HasAxiLite
     if (decls.isEmpty) return Seq.empty
     val addrs = decls.map(_.addr).toSeq.sorted
     def outside(sig: UInt, nm: String): Expr =
-      // Neq directly rather than Not(Eq): normalization would absorb it anyway, but
-      // the English renderer reads the RAW ast, and "differs from" beats
-      // "it is not the case that ... equals ..." seven times in a row.
       addrs.map(a => Cmp(CmpOp.Neq, Sig(sig, nm), Lit(BigInt(a), hex(a))): Expr).reduce(_ && _)
     val listed = addrs.map(hex).mkString(", ")
 
-    val ps = mutable.ArrayBuffer.empty[NamedProp]
-    if (policyReadErrors)
-      ps += mm("mm_unmapped_read",
-               (B(S.AXI.rvalid, "rvalid") && outside(mon.arAddr, "arAddr")) ==> rrespIs(SLVERR, "SLVERR"),
-               s"a read outside the declared map ($listed) must be refused")
-    if (policyWriteErrors)
-      ps += mm("mm_unmapped_write",
-               (B(S.AXI.bvalid, "bvalid") && outside(mon.awAddr, "awAddr")) ==> brespIs(SLVERR, "SLVERR"),
-               s"a write outside the declared map ($listed) must be refused")
-    ps.toSeq
+    Seq(
+      mm("mm_unmapped_read",
+         (B(S.AXI.rvalid, "rvalid") && outside(mon.arAddr, "arAddr")) ==> rrespIs(SLVERR, "SLVERR"),
+         s"a read outside the declared map ($listed) must be refused"),
+      mm("mm_unmapped_write",
+         (B(S.AXI.bvalid, "bvalid") && outside(mon.awAddr, "awAddr")) ==> brespIs(SLVERR, "SLVERR"),
+         s"a write outside the declared map ($listed) must be refused")
+    )
   }
 
   // flush properties when all is said and done!

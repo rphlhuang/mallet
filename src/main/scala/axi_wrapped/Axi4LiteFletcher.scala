@@ -11,7 +11,7 @@ import chisel3._
 import chisel3.util._
 import _root_.circt.stage.ChiselStage
 
-import mallet.{MalletSpec, MalletRegistry, Operand, Status, Result, Commit, RW, B}
+import mallet.{MalletSpec, MalletRegistry, Status, Result, Commit, WO, B}
 
 case class FletcherModuleParams( // Note: do not put default value here
                             // params suffixed with _r, _w, or _rw represent addresses
@@ -229,11 +229,11 @@ object Axi4LiteFletcherMain extends App {
 class FletcherSpec(p: FletcherModuleParams) extends Axi4LiteFletcher(p) with MalletSpec {
 
   // ── memory-map roles ─────────────────────────────────────────────
-  p.data_w        is Operand at dataReg
-  p.push_w        is Commit  at pushPendingReg requiring (dataReg) acceptedOn dut.io.in.ready
-  p.status_r      is Status  at dutValidReg
-  p.result_r      is Result  at dutDataReg validWhen dutValidReg
-  p.soft_reset_rw is RW
+  p.data_w        is WO
+  p.push_w        is Commit requiring (p.data_w)
+  p.status_r      is Status  setBy   p.push_w
+  p.result_r      is Result  gatedBy p.status_r
+  p.soft_reset_rw is WO      // named _rw, but this design does not decode it for reads at all
 
   // ── protocol contract ────────────────────────────────────────────
   S.AXI conformsTo AxiLite32Slave

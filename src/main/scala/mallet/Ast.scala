@@ -98,13 +98,11 @@ sealed trait Expr {
   // Non-overlappping implication: rewritten to prevent current CIRCT lowering problems
   def |=>(c: Expr): Prop = Implies(this.past(1), c)
 
-  /** How far back in time this expression reaches.
-    *
-    * Two rules:
-    *   - ADDITIVE under nesting: `Past(Past(a,1),2)` samples 3 cycles back,
-    *     because CIRCT lowers it to a shiftreg feeding a shiftreg.
-    *   - MAX across siblings.
-    */
+// How far back in time this expression reaches.
+// Two rules:
+//    - ADDITIVE under nesting: `Past(Past(a,1),2)` samples 3 cycles back,
+//      because CIRCT lowers it to a shiftreg feeding a shiftreg.
+//    - MAX across siblings.
   final def maxPast: Int = this match {
     case Past(a, n) => n + a.maxPast
     case Not(a)     => a.maxPast

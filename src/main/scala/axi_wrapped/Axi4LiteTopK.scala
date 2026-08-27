@@ -16,7 +16,7 @@ import _root_.circt.stage.ChiselStage
 
 import hardfloat._
 
-import mallet.{MalletSpec, MalletRegistry, Operand, Status, Result, Commit, RW, B}
+import mallet.{MalletSpec, MalletRegistry, Status, Result, Commit, RO, WO, B}
 
 case class TopKModuleParams( // Note: do not put default value here
                             // params suffixed with _r, _w, or _rw represent addresses
@@ -316,13 +316,13 @@ object Axi4LiteTopKMain extends App {
 }
 
 class TopKSpec(p: TopKModuleParams) extends Axi4LiteTopK(p) with MalletSpec {
-  p.index_w       is Operand at indexReg
-  p.value_w       is Operand at dataReg 
-  p.last_w        is Commit  at pushPendingReg requiring (indexReg, dataReg) acceptedOn dut.io.in.ready
-  p.result_val_r  is Result  at dutDataReg validWhen dutValidReg
-  p.result_idx_r  is Result  at dutIdxReg validWhen dutValidReg
-  p.status_r      is Status  at dutValidReg
-  p.soft_reset_rw is RW
+  p.index_w       is WO
+  p.value_w       is WO
+  p.last_w        is Commit requiring (p.index_w, p.value_w)
+  p.result_val_r  is Result  gatedBy p.status_r  // popping read
+  p.result_idx_r  is RO      gatedBy p.status_r  // gated like a result, but does NOT pop
+  p.status_r      is Status  setBy   p.last_w
+  p.soft_reset_rw is WO      // named _rw, but this design does not decode it for reads at all
   S.AXI conformsTo AxiLite32Slave
   property("result_not_dropped")  { dut.io.out.fire |=> dutValidReg }
   done()

@@ -203,8 +203,13 @@ class CmdSpec(p: CmdModuleParams) extends Axi4LiteCmd(p) with MalletSpec {
 
   // ── memory-map roles ─────────────────────────────────────────────
   p.const1_r      is RO
+  p.const2_r      is RO
   p.dut_rw        is RW
   p.soft_reset_rw is RW
+
+  // NOTE: unmapped reads on this map respond (B) OKAY with a 0xbad00000|addr rather than SLVERR
+  // since SLVERR makes AVED read 0xffffffff for every address
+  // TODO: Fix in GH issue #1
 
   // ── protocol contract ────────────────────────────────────────────
   S.AXI conformsTo AxiLite32Slave
