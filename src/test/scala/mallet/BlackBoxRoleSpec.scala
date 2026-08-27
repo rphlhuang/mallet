@@ -59,7 +59,7 @@ class BlackBoxRoleSpec extends AnyFlatSpec with Matchers {
     Commit.access shouldBe WO
 
     RC.destructiveRead shouldBe true
-    RO.destructiveRead shouldBe False
+    RO.destructiveRead shouldBe false
 
     Storage.readbackGuaranteed shouldBe true
     RW.readbackGuaranteed      shouldBe false
