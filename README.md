@@ -3,6 +3,7 @@
 ## Overview
 `mallet` is a fully open-source formal verification harness for the Chisel stack that issues correctness properties derived from AXI memory map annotations to multiple independent model-checking engines, producing an adjudication matrix to support agile verification of scientific-computing accelerators. 
 Since properties should be rendered from the design, io/spec/property drift is caught compile-time, crucial for building agentic loops.
+Annotations are "black box" by construction: every argument a memory-map annotation takes is an address, a literal, or an access mode - notably not a DUT internal signal. A spec therefore names only what a bus master could observe, and persists throughout refactoring of the design it describes.
 Inspired by [FLAG: Formal and LLM-assisted SVA Generation for Formal Specifications of On-Chip Communication Protocols](http://arxiv.org/abs/2504.17226), `mallet` takes a formal-first approach that centers around a custom grammar for all properties. Each `mallet` property has a 3 representations -- (natural language (English), Chisel assertion, abstract syntax tree) -- for three separate but cohesive purposes:
 
 1) Natural language: for human and LLM interpretability. Studies show that [LLMs have poor temporal reasoning skills](http://arxiv.org/abs/2406.09170) so natural language improves the LLM's understanding of the assertion set. Natural language also helps the human engineer interpret the formal engine's (btormc's) verdict, as it becomes divorced from the original Chisel syntax as it is lowered down from Chisel assertions to btor2.
@@ -69,18 +70,30 @@ This will also install the `chisel-axi-bridge` python module as a package from `
 
 To facilitate formal verification for a multiplicity of common communication protocols, `mallet` ships protocol contracts (see `src/main/scala/mallet/contract`) to automatically verify Chisel modules that inherit from certain constrained interfaces. Currently the only interface supported is 32-bit AMBA AXI-Lite, which requires your module under test to extend `axi.HasAxiLite32IO` from the `chisel-axi-utils` submodule. To activate protocol contracts, use the `conformsTo` function on the AxiLite32IO bus, e.g. `S.AXI conformsTo AxiLite32Slave` with infix notation.
 
+### Basics: Three Property Tiers
+
+Every `mallet` property travels through the flow tagged with its origin, the *tier* that produced it, so the adjudication matrix can be grouped and counted by it.
+
+| Tier | Written by | Knows about | Surface |
+| ---- | ---------- | ----------- | ------- |
+| `transport` | the protocol contract | the bus type only | `S.AXI conformsTo AxiLite32Slave` |
+| `memmap` | generated from your annotations | addresses and access modes | `p.status_r is Status setBy p.push_w` |
+| `manual` | you, by hand or approving LLM changes | anything, including internal signals | `property(...) { ... }` / `assume(...) { ... }` |
+
+Note here that `manual` is the only tier permitted to reference a signal inside the design. `transport` and `memmap` are black box, so a property from either tier can only observe what a bus master can see. When a design fact needs an internal signal, it goes in `manual`, benefiting from `mallet`'s better lowering capabitilies over Chisel's Assert/AssumeProperty()s.
+
 ### Basics: Annotating the Memory Map
 
-With `mallet`, many manually-written formal properties can be automatically generated from *design annotations* instead, which automatically generate syntactically correct properties proven to lower down to the formal engines (many common SVA properties like |=> cannot be parsed by open-source formal tools). A `mallet` spec is a subclass of your DUT (so every internal signal is already in scope) that mixes in `MalletSpec`, and it reads like the comments you'd already put on a memory map:
+With `mallet`, many manually-written formal properties can be automatically generated from *design annotations* instead, which automatically generate syntactically correct properties proven to lower down to the formal engines (many common SVA properties like |=> cannot be parsed by open-source formal tools). A `mallet` spec is a subclass of your DUT that mixes in `MalletSpec`, and it reads like the comments you'd already put on a memory map:
 
 ```scala
 class MacSpec(p: MacModuleParams) extends Axi4LiteMac(p) with MalletSpec {
-  p.a_w           is Operand at aReg
-  p.b_w           is Operand at bReg
-  p.push_w        is Commit  at pushPendingReg requiring (aReg, bReg) acceptedOn dut.io.in.ready
-  p.status_r      is Status  at dutValidReg
-  p.result_r      is Result  at dutDataReg validWhen dutValidReg
-  p.soft_reset_rw is RW
+  p.a_w           is WO
+  p.b_w           is WO
+  p.push_w        is Commit requiring (p.a_w, p.b_w)
+  p.status_r      is Status  setBy   p.push_w
+  p.result_r      is Result  gatedBy p.status_r
+  p.soft_reset_rw is WO
 
   S.AXI conformsTo AxiLite32Slave
 
@@ -91,20 +104,46 @@ class MacSpec(p: MacModuleParams) extends Axi4LiteMac(p) with MalletSpec {
 }
 ```
 
-The address is the subject of every line, so the left column reads top-to-bottom as the memory map itself. Each line adds its properties and corresponding registers to a queue, and `done()` flushes them all at the end.
+Since the address is the main character, the left column reads top-to-bottom as the memory map itself. Subclassing the DUT is what lets the `property(...)` and `assume(...)` reach internal DUT signals. Each line adds its properties and corresponding registers to a queue, and `done()` flushes them all at the end.
 
-A role is a memory-map access mode plus a meaning. The **access modes** are `RO`, `WO`, `RW`, `W1C`. A **role** refines one of these and emits properties automatically:
+#### Access modes
 
-| Role | Implies | Subject | Emits... |
-| ---- | ------- | ------- | -------- |
-| `Operand` | WO | operand register | declares the operand (consumed by `requiring`) |
-| `Commit`  | W  | pending flag | pending retires once accepted; every `requiring` operand was written since reset |
-| `Status`  | RO | status bit | a read of the address returns the bit |
-| `Result`  | RO | data register | a read returns the data; reading clears the valid flag |
+Access modes in `mallet` are inspired by fairly standard register-access taxonomy, which [SystemRDL 2.0](https://www.accellera.org/images/downloads/standards/systemrdl/SystemRDL_2.0_Jan2018.pdf) and [UVM 1.2 RAL](https://verificationacademy.com/verification-methodology-reference/uvm/docs_1.1a/html/files/reg/uvm_reg_field-svh.html) implement.
 
-Note that an address can also carry a bare access mode with no role (`p.soft_reset_rw is RW`), which just documentation (for now).
+| Mode | Meaning | Emits... |
+| ---- | ------- | -------- |
+| `RO` | reads succeed, writes refused | `mm_write_errs_A`, `mm_read_ok_A` |
+| `WO` | writes succeed, reads refused | `mm_read_errs_A` |
+| `RW` | readable and writable | `mm_read_ok_A` |
+| `Storage` | software-owned storage: a read returns the last value written (good for on-the-fly params) | `mm_read_ok_A`, `mm_readback_A` |
+| `RC` | read-only *and* destructive (e.g. the read pops) | `mm_write_errs_A` |
+| `W1C` | write-one-to-clear | access permissions only |
 
-Manually written temporal logic (a la Chisel `AssertProperty()`) can be written via `property(name) { ... }` with the added benefit of `|=>` support, automatic warm-up masking to prevent counterexamples before reset, and the fragment guards for free.
+Note that, for now, only **negative** obligations are asserted: a write here must be refused, a read here must be refused. Positive obligations are liveness properties (not currently supported in FOSS), so `mallet` never asserts that a write succeeds, for example.
+
+This gives us plenty of consequences; here we detail two examples. `RC` suppresses readback rather than adding a property, since declaring a read destructive is what makes idempotence unassertable. And `W1C`'s clearing behaviour is not black-box-observable at all, since hardware may re-set the bit between your write and your read, so `W1C` only contributes permissions; prove the clearing in the manual tier if a design needs it.
+
+Beyond the declared addresses, the map as a whole emits `mm_unmapped_read` and `mm_unmapped_write` over the complement of the declared set: anything not in the map must be refused with SLVERR.
+
+#### Roles
+
+A role is a named, recurring pairing of an access mode with a relation which takes another address in the same map.
+
+| Role | Mode | Relation | Adds... |
+| ---- | ---- | -------- | ------- |
+| `Status` | `RO` | `setBy <commitAddr>` | `mm_solicited_A`: the address reports ready only if the commit address was actually written since reset |
+| `Result` | `RC` | `gatedBy <statusAddr>` | `mm_gated_A`: reading the result while the last observed status read said not-ready must be refused |
+| `Commit` | `WO` | `requiring (<operandAddrs>*)` | `mm_requires_A`, an **assume**: the master writes the commit address only after writing every operand |
+
+Relations are optional, so `p.x is Status` alone gives you just the `RO` properties.
+
+Black-box properties need *memory*, since a write's effect is invisible until a later read. `mallet` reconstructs that history from the interface alone, keeping per-address "was written since reset", "last value written" and "last value read" monitors built purely from AXI handshakes. These are still safety properties: the monitors are essentially simple state bits that makes a past-dependent assertion expressible, in the same way SVA's `$past` does.
+
+#### Manual Properties
+
+Manually written temporal logic a la Chisel3 use `property(name) { ... }` and `assume(name) { ... }`, which are `mallet`'s equivalents of Chisel's `AssertProperty()` / `AssumeProperty()`, with the added benefit of `|=>` support and automatic warm-up masking to prevent counterexamples before reset. Going through `mallet` rather than calling `chisel3.ltl` directly is also what gets a property its stable label, its English rendering, its reachability cover, and its row in the adjudication matrix.
+
+This is the only tier that may reference internal signals.
 
 ### Basics: Adjudication
 
