@@ -3,7 +3,7 @@
 ## Overview
 `mallet` is a fully open-source formal verification harness for the Chisel stack that issues correctness properties derived from AXI memory map annotations to multiple independent model-checking engines, producing an adjudication matrix to support agile verification of scientific-computing accelerators. 
 
-<img width="4760" height="6670" alt="chisel_mallettest_ARCHIDE26 drawio" src="https://github.com/user-attachments/assets/02fe9418-9703-4694-99c7-cc94243fe1c7" />
+<img width="1500" height="2106" alt="chisel_mallettest_gh drawio" src="https://github.com/user-attachments/assets/ea782367-2eed-4d71-a5df-3f7d52dd4559" />
 
 Since properties should be rendered from the design, io/spec/property drift is caught compile-time, crucial for building agentic loops.
 Annotations are "black box" by construction: every argument a memory-map annotation takes is an address, a literal, or an access mode - notably not a DUT internal signal. A spec therefore names only what a bus master could observe, and persists throughout refactoring of the design it describes.
